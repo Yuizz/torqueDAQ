@@ -25,13 +25,27 @@ float ratedZero = 0;
 Adafruit_ADS1115 ads;
 
 const int chipSelect = 10;
-const int buzzerPin = 2;
+const int buzzerPin = 9;
+
+float getZero(Adafruit_ADS1115 adsModule, float multiplier){
+  //Receives an adsModule object and the multiplier and returns a value to set the zero on the lectures
+  int lectures = 32;
+  float total = 0.0f;
+
+  for (int i = 0; i < lectures; i++){
+    int16_t result = adsModule.readADC_Differential_0_1();
+    total += result*multiplier;
+    delay(4000/lectures);
+  }
+  Serial.println(total/lectures);
+  return (total/lectures);
+}
 
 void setup() {
   Serial.begin(9600);
 
   ads.setGain(GAIN_SIXTEEN); //Set the gain to the 16x / 1bit = 0.0078125mV
-  ads.setDataRate(2); //32 SPS
+  ads.setDataRate(0); //8 SPS to avoid the most the noise 
   ads.begin();
 
   //To set the Zero of the torque sensor
@@ -55,7 +69,7 @@ void loop() {
   int16_t results;
 
     //Read the results from the Adafruit differential from 0 and 1 inputs
-  results = ads.readADC_Differential_0_1(); 
+  results = ads.readADC_Differential_0_1();
 
   Serial.print("Differential: "); 
     Serial.print(results); //Raw data
@@ -64,19 +78,5 @@ void loop() {
     Serial.print("mV");
     Serial.println(")");
 
-  delay(32);
-}
-
-
-float getZero(Adafruit_ADS1115 adsModule, float multiplier){
-  //Receives an adsModule object and the multiplier and returns a value to set the zero on the lectures
-  float total = 0.0f;
-
-  for (int i = 0; i < 128; i++){
-    int16_t result = adsModule.readADC_Differential_0_1();
-    total += result*multiplier;
-    delay(32);
-  }
-
-  return (total/128);
+  delay(125);
 }
