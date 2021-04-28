@@ -29,10 +29,11 @@ RTC_PCF8523 rtc;
 //Required values
 const float torqueRatedOutput = 1.3161; //The rated output in mV/V indicated by certificate of calibration or data sheet
 const float multiplier = 0.0078125F; //The value for each bit in the results
-const int dataRate[] = {8, 16, 32, 64, 128, 250, 475, 860}; //TODO make a way to easy select the data rate on ejecution time
+// const int dataRate[] = {8, 16, 32, 64, 128, 250, 475, 860}; //TODO make a way to easy select the data rate on ejecution time
 float ratedZero = 0;
 char logfileName[24];
-int results[128]={};
+// float results[60][2]={};
+int millisAdded = 0;
 int counter = 0;
 
 //Pinouts
@@ -51,7 +52,7 @@ void setup() {
   ads.begin();
 
   #ifdef SDcard
-
+  
     while(!SD.begin(chipSelect) || !rtc.begin()){
       //Alarm indicating that the SD or rtc is not present or the wiring is incorrect
       tone(buzzerPin, 10000, 50);
@@ -63,14 +64,16 @@ void setup() {
     String fileName = getFileName();
     fileName.toCharArray(logfileName, 24);
     logfile.open(logfileName, O_RDWR | O_CREAT);
+    logfile.print("millis");
+    logfile.print(",");
     logfile.println("mV");
     logfile.close();
 #endif
 
   //To set the Zero of the torque sensor
   ratedZero = getZero(ads, multiplier);
-
-    //TODO make and alarm with buzzer or something indicating that the system is ready SDCARD
+  millisAdded = millis();
+  //TODO make and alarm with buzzer or something indicating that the system is ready SDCARD
 }
 
 void loop() {
@@ -81,28 +84,37 @@ void loop() {
   Serial.print("Differential: "); 
     Serial.print(result); //Raw data
     Serial.print("(");
-    Serial.print(result*multiplier-ratedZero); //Real mV difference
+    Serial.print(result*multiplier-ratedZero, 4); //Real mV difference
     Serial.print("mV");
     Serial.println(")");
 
-  if(counter<128){
-    results[counter] = result * multiplier - ratedZero;
-    counter++;
-  }else{
-    logfile.open(logfileName, O_WRITE | O_AT_END);
-    Serial.println("Saving data...");
-    for (int i = 0; i < 128; i++){
-      Serial.print(".");
-      logfile.println(results[i]);
-    }
-    counter = 0;
+    logfile.open(logfileName, FILE_WRITE);
+    logfile.print(millis()-millisAdded);
+    logfile.print(",");
+    logfile.println(result * multiplier - ratedZero, 4);
     logfile.close();
-  }
+    // if(counter<60){
+    //   results[counter][0] = millis() - millisAdded;
+    //   results[counter][1] = result * multiplier - ratedZero;
+    //   counter++;
+    // }else{
+    //   logfile.open(logfileName, FILE_WRITE);
+    //   Serial.println("Saving data...");
+    //   for (int i = 0; i < 60; i++){
+    //     Serial.print(".");
+    //     logfile.print(results[i][0]);
+    //     logfile.print(",");
+    //     logfile.println(results[i][1], 4);
+    //   }
+    //   counter = 0;
+    //   logfile.close();
+    // }
     delay(10);
 }
 
 float getZero(Adafruit_ADS1115 adsModule, float multiplier){
-  //Receives an adsModule object and the multiplier and returns a value to set the zero on the lectures
+  //Receives an adsModule object and the multiplier and 
+  //  returns a value to set the zero on the lectures
   int lectures = 32; //TODO make this easy controllable
   float total = 0.0f;
 
@@ -125,6 +137,7 @@ String getFileName(){
   String fileName = timeStamp + ".CSV";
 
   Serial.println("Logging to: " + fileName);
+  Serial.println(timeStamp);
 
   return fileName;
 }
