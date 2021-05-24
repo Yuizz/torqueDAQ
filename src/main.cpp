@@ -46,7 +46,7 @@ float getZero(Adafruit_ADS1115 adsModule, float multiplier);
 String getFileName();
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
 
   ads.setGain(GAIN_SIXTEEN); //Set the gain to the 16x / 1bit = 0.0078125mV
   ads.begin();
@@ -76,23 +76,37 @@ void setup() {
   //TODO make and alarm with buzzer or something indicating that the system is ready SDCARD
 }
 
+void log(String time){
+  Serial.print(time);
+  Serial.print(" - ");
+  Serial.println(millis());
+}
+
 void loop() {
   int16_t result;
     //Read the results from the Adafruit differential from 0 and 1 inputs
+  // log("Read from ADS");
   result = ads.readADC_Differential_0_1();
+  // log("End read from ADS");
 
-  Serial.print("Differential: "); 
-    Serial.print(result); //Raw data
-    Serial.print("(");
-    Serial.print(result*multiplier-ratedZero, 4); //Real mV difference
-    Serial.print("mV");
-    Serial.println(")");
 
+  // Serial.print("Differential: "); 
+  //   Serial.print(result); //Raw data
+  //   Serial.print("(");
+  //   Serial.print(result*multiplier-ratedZero, 4); //Real mV difference
+  //   Serial.print("mV");
+  //   Serial.println(")");
+
+
+    log("Open file");
     logfile.open(logfileName, FILE_WRITE);
+    log("File Opened");
     logfile.print(millis()-millisAdded);
     logfile.print(",");
     logfile.println(result * multiplier - ratedZero, 4);
+    log("Writed on file");
     logfile.close();
+    log("Closed File");
     // if(counter<60){
     //   results[counter][0] = millis() - millisAdded;
     //   results[counter][1] = result * multiplier - ratedZero;
@@ -109,7 +123,9 @@ void loop() {
     //   counter = 0;
     //   logfile.close();
     // }
+    log("Begin delay");
     delay(10);
+    log("End cycle");
 }
 
 float getZero(Adafruit_ADS1115 adsModule, float multiplier){
@@ -139,5 +155,6 @@ String getFileName(){
   Serial.println("Logging to: " + fileName);
   Serial.println(timeStamp);
 
+  fileName = "12345.CSV";
   return fileName;
 }
