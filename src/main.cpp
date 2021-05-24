@@ -27,6 +27,7 @@ Adafruit_ADS1115 ads;
 RTC_PCF8523 rtc;
 
 //Required values
+const int Interval = 5000; //Interval in ms to flushg the logfile
 const float torqueRatedOutput = 1.3161; //The rated output in mV/V indicated by certificate of calibration or data sheet
 const float multiplier = 0.0078125F; //The value for each bit in the results
 // const int dataRate[] = {8, 16, 32, 64, 128, 250, 475, 860}; //TODO make a way to easy select the data rate on ejecution time
@@ -34,7 +35,7 @@ float ratedZero = 0;
 char logfileName[24];
 // float results[60][2]={};
 int millisAdded = 0;
-int counter = 0;
+int lastFlush = 0;
 
 //Pinouts
 const int chipSelect = 10;
@@ -73,7 +74,11 @@ void setup() {
   //To set the Zero of the torque sensor
   ratedZero = getZero(ads, multiplier);
   millisAdded = millis();
+  lastFlush = millisAdded;
   //TODO make and alarm with buzzer or something indicating that the system is ready SDCARD
+  // log("Open file");
+  logfile.open(logfileName, FILE_WRITE);
+  // log("File Opened");
 }
 
 void log(String time){
@@ -98,34 +103,21 @@ void loop() {
   //   Serial.println(")");
 
 
-    log("Open file");
-    logfile.open(logfileName, FILE_WRITE);
-    log("File Opened");
     logfile.print(millis()-millisAdded);
     logfile.print(",");
     logfile.println(result * multiplier - ratedZero, 4);
     log("Writed on file");
-    logfile.close();
-    log("Closed File");
-    // if(counter<60){
-    //   results[counter][0] = millis() - millisAdded;
-    //   results[counter][1] = result * multiplier - ratedZero;
-    //   counter++;
-    // }else{
-    //   logfile.open(logfileName, FILE_WRITE);
-    //   Serial.println("Saving data...");
-    //   for (int i = 0; i < 60; i++){
-    //     Serial.print(".");
-    //     logfile.print(results[i][0]);
-    //     logfile.print(",");
-    //     logfile.println(results[i][1], 4);
-    //   }
-    //   counter = 0;
-    //   logfile.close();
-    // }
+    // logfile.close();
+    // log("Closed File");
     log("Begin delay");
     delay(10);
     log("End cycle");
+    if(millis() - lastFlush >= Interval){
+      logfile.close();
+      logfile.open(logfileName, FILE_WRITE);
+      lastFlush = millis();
+      log("flushed");
+    }
 }
 
 float getZero(Adafruit_ADS1115 adsModule, float multiplier){
@@ -155,6 +147,6 @@ String getFileName(){
   Serial.println("Logging to: " + fileName);
   Serial.println(timeStamp);
 
-  fileName = "12345.CSV";
+  // fileName = "12345.CSV";
   return fileName;
 }
