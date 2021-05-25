@@ -2,7 +2,7 @@
 #include <SPI.h>
 #include <SDfat.h> //Longer file names, allow us to put timestamp on log files
 #include <RTClib.h>
-#include <Adafruit_ADS1X15.h> //To see the documentation: https://github.com/RobTillaart/ADS1X15
+#include <Adafruit_ADS1X15.h> //docs: https://github.com/RobTillaart/ADS1X15
 
 /*
   SD card pins configuration (For the adafruit shield board)
@@ -27,24 +27,32 @@ Adafruit_ADS1115 ads;
 RTC_PCF8523 rtc;
 
 //Required values
-const float torqueRatedOutput = 1.3161; //The rated output in mV/V indicated by certificate of calibration or data sheet
-const float multiplier = 0.0078125F; //The value for each bit in the results
-// const int dataRate[] = {8, 16, 32, 64, 128, 250, 475, 860}; //TODO make a way to easy select the data rate on ejecution time
+const float TorqueRatedOutput = 1.3161; //The rated output in mV/V indicated by certificate of calibration or data sheet
+const float Multiplier = 0.0078125F; //The value for each bit in the results
+
+//Required consts
+const int Interval = 5000; //Interval in ms to flushg the logfile
+const int SampleRate = 100; //CHANGE THIS VARIABLE TO SAMPLE RATE
+const int SampleInterval = 1000 / SampleRate;
+
+//Requiered variables
 float ratedZero = 0;
 char logfileName[24];
-// float results[60][2]={};
-int millisAdded = 0;
-int counter = 0;
+
+//Time variables
+unsigned long millisAdded = 0;
+unsigned long lastFlush = 0;
+unsigned long lastSample = 0;
 
 //Pinouts
-const int chipSelect = 10;
-const int buzzerPin = 9;
-
+const int ChipSelect = 10;
+const int BuzzerPin = 9;
 
 //Function prototypes
 float getZero(Adafruit_ADS1115 adsModule, float multiplier);
 String getFileName();
 
+/*-----------------------------------SETUP-----------------------------------*/
 void setup() {
   Serial.begin(115200);
 
@@ -53,16 +61,17 @@ void setup() {
 
   #ifdef SDcard
   
-    while(!SD.begin(chipSelect) || !rtc.begin()){
+    while(!SD.begin(ChipSelect) || !rtc.begin()){
       //Alarm indicating that the SD or rtc is not present or the wiring is incorrect
-      tone(buzzerPin, 10000, 50);
+      tone(BuzzerPin, 10000, 50);
       delay(100);
-      tone(buzzerPin, 10000, 100);
+      tone(BuzzerPin, 10000, 100);
       delay(200);
     }
     
     String fileName = getFileName();
     fileName.toCharArray(logfileName, 24);
+    //Create the file and print in it the headers
     logfile.open(logfileName, O_RDWR | O_CREAT);
     logfile.print("millis");
     logfile.print(",");
@@ -71,62 +80,58 @@ void setup() {
 #endif
 
   //To set the Zero of the torque sensor
-  ratedZero = getZero(ads, multiplier);
+  ratedZero = getZero(ads, Multiplier);
   millisAdded = millis();
+  lastFlush = millisAdded;
+  lastSample = millisAdded;
   //TODO make and alarm with buzzer or something indicating that the system is ready SDCARD
+  logfile.open(logfileName, FILE_WRITE);
 }
-
-void log(String time){
-  Serial.print(time);
+void log(String message) {
+  Serial.print(message);
   Serial.print(" - ");
   Serial.println(millis());
 }
-
+/*-----------------------------------LOOP-----------------------------------*/
 void loop() {
   int16_t result;
     //Read the results from the Adafruit differential from 0 and 1 inputs
-  // log("Read from ADS");
+  // log("Reading from ADS");
   result = ads.readADC_Differential_0_1();
-  // log("End read from ADS");
-
-
+  // log("Ended read from ADS");
   // Serial.print("Differential: "); 
   //   Serial.print(result); //Raw data
   //   Serial.print("(");
   //   Serial.print(result*multiplier-ratedZero, 4); //Real mV difference
   //   Serial.print("mV");
   //   Serial.println(")");
+  // log("Writing on file ");
+  logfile.print(millis() - millisAdded);
+  logfile.print(",");
+  logfile.println(result * Multiplier - ratedZero, 4);
+  // log("End writing on file ");
 
+  // int passedTime = millis() - lastSample;
+  // log("Before delay ");
+  int passedTime = SampleInterval + lastSample - millis();
+  if(passedTime > 0)
+    delay(passedTime);
+  // delay(SampleInterval);
+  // log("After delay ");
+  lastSample = millis();
 
-    log("Open file");
-    logfile.open(logfileName, FILE_WRITE);
-    log("File Opened");
-    logfile.print(millis()-millisAdded);
-    logfile.print(",");
-    logfile.println(result * multiplier - ratedZero, 4);
-    log("Writed on file");
+  if (millis() - lastFlush >= Interval)
+  {
+    //Close the file every <Interval> (to save the data)
+    log("---------------------Closing file---------------------- ");
     logfile.close();
-    log("Closed File");
-    // if(counter<60){
-    //   results[counter][0] = millis() - millisAdded;
-    //   results[counter][1] = result * multiplier - ratedZero;
-    //   counter++;
-    // }else{
-    //   logfile.open(logfileName, FILE_WRITE);
-    //   Serial.println("Saving data...");
-    //   for (int i = 0; i < 60; i++){
-    //     Serial.print(".");
-    //     logfile.print(results[i][0]);
-    //     logfile.print(",");
-    //     logfile.println(results[i][1], 4);
-    //   }
-    //   counter = 0;
-    //   logfile.close();
-    // }
-    log("Begin delay");
-    delay(10);
-    log("End cycle");
+    logfile.open(logfileName, FILE_WRITE);
+    // log("FIle reopened");
+    lastFlush = millis();
+    }
+    log("#########Cycle ended#######");
 }
+/*-------------------------------FUNCTIONS-------------------------------*/
 
 float getZero(Adafruit_ADS1115 adsModule, float multiplier){
   //Receives an adsModule object and the multiplier and 
@@ -155,6 +160,6 @@ String getFileName(){
   Serial.println("Logging to: " + fileName);
   Serial.println(timeStamp);
 
-  fileName = "12345.CSV";
+  // fileName = "12345.CSV";
   return fileName;
 }
