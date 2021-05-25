@@ -31,16 +31,17 @@ const float TorqueRatedOutput = 1.3161; //The rated output in mV/V indicated by 
 const float Multiplier = 0.0078125F; //The value for each bit in the results
 
 //Required consts
-const int Interval = 5000; //Interval in ms to flushg the logfile
+const int IntervalS = 5; //The interval in seconds to flush he logfile
+const unsigned long IntervalMs = IntervalS * 1000000UL; //IntervalMs in us to flush the logfile
 const int SampleRate = 100; //CHANGE THIS VARIABLE TO SAMPLE RATE
-const int SampleInterval = 1000 / SampleRate;
+const unsigned long SampleInterval = 1000000UL / SampleRate;
 
 //Requiered variables
 float ratedZero = 0;
 char logfileName[24];
 
 //Time variables
-unsigned long millisAdded = 0;
+unsigned long microsAdded = 0;
 unsigned long lastFlush = 0;
 unsigned long lastSample = 0;
 
@@ -55,7 +56,8 @@ String getFileName();
 /*-----------------------------------SETUP-----------------------------------*/
 void setup() {
   Serial.begin(115200);
-
+  Serial.println(IntervalMs);
+  Serial.println(SampleInterval);
   ads.setGain(GAIN_SIXTEEN); //Set the gain to the 16x / 1bit = 0.0078125mV
   ads.begin();
 
@@ -81,9 +83,9 @@ void setup() {
 
   //To set the Zero of the torque sensor
   ratedZero = getZero(ads, Multiplier);
-  millisAdded = millis();
-  lastFlush = millisAdded;
-  lastSample = millisAdded;
+  microsAdded = micros();
+  lastFlush = microsAdded;
+  lastSample = microsAdded;
   //TODO make and alarm with buzzer or something indicating that the system is ready SDCARD
   logfile.open(logfileName, FILE_WRITE);
 }
@@ -106,30 +108,30 @@ void loop() {
   //   Serial.print("mV");
   //   Serial.println(")");
   // log("Writing on file ");
-  logfile.print(millis() - millisAdded);
+  logfile.print((micros() - microsAdded) / 1000);
   logfile.print(",");
   logfile.println(result * Multiplier - ratedZero, 4);
   // log("End writing on file ");
 
   // int passedTime = millis() - lastSample;
   // log("Before delay ");
-  int passedTime = SampleInterval + lastSample - millis();
+  int passedTime = SampleInterval + lastSample - micros();
   if(passedTime > 0)
-    delay(passedTime);
+    delayMicroseconds(passedTime);
   // delay(SampleInterval);
   // log("After delay ");
-  lastSample = millis();
+  lastSample = micros();
 
-  if (millis() - lastFlush >= Interval)
+  if (micros() - lastFlush >= IntervalMs)
   {
-    //Close the file every <Interval> (to save the data)
-    log("---------------------Closing file---------------------- ");
+    //Close the file every <IntervalMs> (to save the data)
+    // log("---------------------Closing file---------------------- ");
     logfile.close();
     logfile.open(logfileName, FILE_WRITE);
     // log("FIle reopened");
-    lastFlush = millis();
+    lastFlush = micros();
     }
-    log("#########Cycle ended#######");
+    // log("#########Cycle ended#######");
 }
 /*-------------------------------FUNCTIONS-------------------------------*/
 
