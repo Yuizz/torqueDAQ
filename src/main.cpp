@@ -29,11 +29,14 @@ RTC_PCF8523 rtc;
 //Required values
 const float TorqueRatedOutput = 1.3161; //The rated output in mV/V indicated by certificate of calibration or data sheet
 const float Multiplier = 0.0078125F; //The value for each bit in the results
+const float RatedOutput = TorqueRatedOutput * 5; //The total value for the lecture indicated for the excitation 
+                                                    // applied to the sensor
 
 //Required consts
-const int IntervalS = 5; //The interval in seconds to flush he logfile
-const unsigned long IntervalMs = IntervalS * 1000000UL; //IntervalMs in us to flush the logfile
+const int IntervalS = 5; //The interval in seconds to save the logfile
 const int SampleRate = 100; //CHANGE THIS VARIABLE TO SAMPLE RATE
+
+const unsigned long IntervalUs = IntervalS * 1000000UL; //IntervalUs in microSeconds to save the logfile
 const unsigned long SampleInterval = 1000000UL / SampleRate;
 
 //Requiered variables
@@ -56,7 +59,7 @@ String getFileName();
 /*-----------------------------------SETUP-----------------------------------*/
 void setup() {
   Serial.begin(115200);
-  Serial.println(IntervalMs);
+  Serial.println(IntervalUs);
   Serial.println(SampleInterval);
   ads.setGain(GAIN_SIXTEEN); //Set the gain to the 16x / 1bit = 0.0078125mV
   ads.begin();
@@ -71,13 +74,19 @@ void setup() {
       delay(200);
     }
     
-    String fileName = getFileName();
+    String fileName = getFileName(); //Gets the timeStamp name for the file
     fileName.toCharArray(logfileName, 24);
     //Create the file and print in it the headers
     logfile.open(logfileName, O_RDWR | O_CREAT);
-    logfile.print("millis");
+
+    logfile.print("SPS,");
+    logfile.println(SampleRate);
+
+    logfile.print("microSeconds");
     logfile.print(",");
-    logfile.println("mV");
+    logfile.print("mV");
+    logfile.print(",");
+    logfile.println("NM");
     logfile.close();
 #endif
 
@@ -101,16 +110,15 @@ void loop() {
   // log("Reading from ADS");
   result = ads.readADC_Differential_0_1();
   // log("Ended read from ADS");
-  // Serial.print("Differential: "); 
-  //   Serial.print(result); //Raw data
-  //   Serial.print("(");
-  //   Serial.print(result*multiplier-ratedZero, 4); //Real mV difference
-  //   Serial.print("mV");
-  //   Serial.println(")");
   // log("Writing on file ");
+
+  float mV = result * Multiplier - ratedZero;
+
   logfile.print((micros() - microsAdded) / 1000);
   logfile.print(",");
-  logfile.println(result * Multiplier - ratedZero, 4);
+  logfile.print(mV, 4); //Printing the mV to the corresponding column
+  logfile.print(",");
+  logfile.println(map(mV, -RatedOutput, RatedOutput, -3, 3), 4); //Printing the torque value to the corresponding column
   // log("End writing on file ");
 
   // int passedTime = millis() - lastSample;
@@ -118,23 +126,19 @@ void loop() {
   int passedTime = SampleInterval + lastSample - micros();
   if(passedTime > 0)
     delayMicroseconds(passedTime);
-  // delay(SampleInterval);
-  // log("After delay ");
   lastSample = micros();
 
-  if (micros() - lastFlush >= IntervalMs)
+  if (micros() - lastFlush >= IntervalUs)
   {
-    //Close the file every <IntervalMs> (to save the data)
-    // log("---------------------Closing file---------------------- ");
-    logfile.close();
+    logfile.close(); //Close the file every <IntervalUs> (to save the data)
+    //This takes around 30ms every close and opens the file so, we will lose that range of time in samples every <IntervalUs> 
     logfile.open(logfileName, FILE_WRITE);
-    // log("FIle reopened");
     lastFlush = micros();
     }
-    // log("#########Cycle ended#######");
 }
-/*-------------------------------FUNCTIONS-------------------------------*/
 
+
+/*-------------------------------FUNCTIONS-------------------------------*/
 float getZero(Adafruit_ADS1115 adsModule, float multiplier){
   //Receives an adsModule object and the multiplier and 
   //  returns a value to set the zero on the lectures
@@ -147,7 +151,7 @@ float getZero(Adafruit_ADS1115 adsModule, float multiplier){
     total += result*multiplier;
     delay(4000/lectures);
   }
-  logfile.close();
+  Serial.print("Rated zero");
   Serial.println(total/lectures);
   return (total/lectures);
 }
@@ -157,11 +161,11 @@ String getFileName(){
   String timeStamp = String(now.timestamp());
   timeStamp.replace(':', '_');
 
-  String fileName = timeStamp + ".CSV";
+  String fileName = timeStamp + ".csv";
+
 
   Serial.println("Logging to: " + fileName);
-  Serial.println(timeStamp);
+  Serial.println(fileName);
 
-  // fileName = "12345.CSV";
   return fileName;
 }
