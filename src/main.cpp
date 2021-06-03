@@ -29,15 +29,15 @@ RTC_PCF8523 rtc;
 //Required values
 const float TorqueRatedOutput = 1.3161; //The rated output in mV/V indicated by certificate of calibration or data sheet
 const float Multiplier = 0.0078125F; //The value for each bit in the results
-const float RatedOutput = TorqueRatedOutput * 5; //The total value for the lecture indicated for the excitation 
-                                                    // applied to the sensor
 
-//Required consts
-const int IntervalS = 5; //The interval in seconds to save the logfile
-const int SampleRate = 100; //CHANGE THIS VARIABLE TO SAMPLE RATE
+//Required settings (Getting from config file or calculated by the settings)
+int SaveInterval = 5; //The interval in seconds to save the logfile
+int SampleRate = 100; //Declare this in the config file at the root of the SDcard
 
-const unsigned long IntervalUs = IntervalS * 1000000UL; //IntervalUs in microSeconds to save the logfile
-const unsigned long SampleInterval = 1000000UL / SampleRate;
+unsigned long SaveIntervalUs = SaveInterval * 1000000UL; //SaveIntervalUs in microSeconds to save the logfile
+unsigned long SampleInterval = 1000000UL / SampleRate;   // The interval in microSeconds to take a sample
+float RatedOutput = TorqueRatedOutput * 5;  //The total value for the lecture indicated for the excitation 
+                                            //  applied to the sensor
 
 //Requiered variables
 float ratedZero = 0;
@@ -45,7 +45,7 @@ char logfileName[24];
 
 //Time variables
 unsigned long microsAdded = 0;
-unsigned long lastFlush = 0;
+unsigned long lastSave = 0;
 unsigned long lastSample = 0;
 
 //Pinouts
@@ -55,11 +55,13 @@ const int BuzzerPin = 9;
 //Function prototypes
 float getZero(Adafruit_ADS1115 adsModule, float multiplier);
 String getFileName();
+void readConfigFile();
+void calculations();
 
 /*-----------------------------------SETUP-----------------------------------*/
 void setup() {
   Serial.begin(115200);
-  Serial.println(IntervalUs);
+  Serial.println(SaveIntervalUs);
   Serial.println(SampleInterval);
   ads.setGain(GAIN_SIXTEEN); //Set the gain to the 16x / 1bit = 0.0078125mV
   ads.begin();
@@ -73,7 +75,10 @@ void setup() {
       tone(BuzzerPin, 10000, 100);
       delay(200);
     }
-    
+
+    readConfigFile();
+    calculations();
+
     String fileName = getFileName(); //Gets the timeStamp name for the file
     fileName.toCharArray(logfileName, 24);
     //Create the file and print in it the headers
@@ -93,7 +98,7 @@ void setup() {
   //To set the Zero of the torque sensor
   ratedZero = getZero(ads, Multiplier);
   microsAdded = micros();
-  lastFlush = microsAdded;
+  lastSave = microsAdded;
   lastSample = microsAdded;
   //TODO make and alarm with buzzer or something indicating that the system is ready SDCARD
   logfile.open(logfileName, FILE_WRITE);
@@ -128,17 +133,67 @@ void loop() {
     delayMicroseconds(passedTime);
   lastSample = micros();
 
-  if (micros() - lastFlush >= IntervalUs)
-  {
-    logfile.close(); //Close the file every <IntervalUs> (to save the data)
-    //This takes around 30ms every close and opens the file so, we will lose that range of time in samples every <IntervalUs> 
+  if (micros() - lastSave >= SaveIntervalUs){
+    logfile.close(); //Close the file every <SaveIntervalUs> (to save the data)
+    //This takes around 30ms every close and opens the file so, we will lose that range of time in samples every <SaveIntervalUs> 
     logfile.open(logfileName, FILE_WRITE);
-    lastFlush = micros();
-    }
+    lastSave = micros();
+  }
 }
 
 
 /*-------------------------------FUNCTIONS-------------------------------*/
+void readConfigFile(){
+  SdFile configFile;
+  configFile.open("config.txt", FILE_READ);
+  char line[40];
+  String lineString;
+
+  if(configFile){
+    while(configFile.available()){
+      configFile.fgets(line, sizeof(line));
+      String stringLine = line;
+      String key = stringLine.substring(0, stringLine.indexOf("="));
+      key.toLowerCase();
+      String stringValue = stringLine.substring(stringLine.indexOf("=") + 1);
+
+      if(key == "samplerate"){
+        int value = stringValue.toInt();
+        if(value<=0 || value>260){
+          Serial.print("Error, value of sample rate out of range: sample rate setted to 100");
+          SampleRate = 100;
+          continue;
+        }
+        Serial.print("Setting the SampleRate to: ");
+        Serial.println(value);
+        SampleRate = value;
+      }
+      if(key=="saveinterval"){
+        int value = stringValue.toInt();
+        if(value <= 0){
+          Serial.print("The Save Interval can not be less or equal to zero");
+          SaveInterval = 1;
+          continue;
+        }
+        Serial.print("Setting the Save Interval to: ");
+        Serial.println(value);
+        SaveInterval = value;
+      }
+
+    }
+  }else{
+    Serial.print("Error opening config file or is not in SDCard");
+  }
+  
+}
+
+void calculations(){
+  //Recalculates this variables in case the config file
+  //  had diffrent ones
+  RatedOutput = TorqueRatedOutput * 5;
+  SaveIntervalUs = SaveInterval * 1000000UL;
+  SampleInterval = 1000000UL / SampleRate;
+}
 float getZero(Adafruit_ADS1115 adsModule, float multiplier){
   //Receives an adsModule object and the multiplier and 
   //  returns a value to set the zero on the lectures
@@ -162,7 +217,6 @@ String getFileName(){
   timeStamp.replace(':', '_');
 
   String fileName = timeStamp + ".csv";
-
 
   Serial.println("Logging to: " + fileName);
   Serial.println(fileName);
