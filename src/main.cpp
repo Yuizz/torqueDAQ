@@ -103,19 +103,11 @@ void setup() {
   //TODO make and alarm with buzzer or something indicating that the system is ready SDCARD
   logfile.open(logfileName, FILE_WRITE);
 }
-void log(String message) {
-  Serial.print(message);
-  Serial.print(" - ");
-  Serial.println(millis());
-}
 /*-----------------------------------LOOP-----------------------------------*/
 void loop() {
   int16_t result;
     //Read the results from the Adafruit differential from 0 and 1 inputs
-  // log("Reading from ADS");
   result = ads.readADC_Differential_0_1();
-  // log("Ended read from ADS");
-  // log("Writing on file ");
 
   float mV = result * Multiplier - ratedZero;
 
@@ -124,10 +116,8 @@ void loop() {
   logfile.print(mV, 4); //Printing the mV to the corresponding column
   logfile.print(",");
   logfile.println(map(mV, -RatedOutput, RatedOutput, -3, 3), 4); //Printing the torque value to the corresponding column
-  // log("End writing on file ");
 
   // int passedTime = millis() - lastSample;
-  // log("Before delay ");
   int passedTime = SampleInterval + lastSample - micros();
   if(passedTime > 0)
     delayMicroseconds(passedTime);
@@ -157,7 +147,7 @@ void readConfigFile(){
       key.toLowerCase();
       String stringValue = stringLine.substring(stringLine.indexOf("=") + 1);
 
-      if(key == "samplerate"){
+      if(key == "samplerate"){ //KEY
         int value = stringValue.toInt();
         if(value<=0 || value>260){
           Serial.print("Error, value of sample rate out of range: sample rate setted to 100");
@@ -168,7 +158,7 @@ void readConfigFile(){
         Serial.println(value);
         SampleRate = value;
       }
-      if(key=="saveinterval"){
+      if(key=="saveinterval"){ //KEY
         int value = stringValue.toInt();
         if(value <= 0){
           Serial.print("The Save Interval can not be less or equal to zero");
@@ -194,6 +184,7 @@ void calculations(){
   SaveIntervalUs = SaveInterval * 1000000UL;
   SampleInterval = 1000000UL / SampleRate;
 }
+
 float getZero(Adafruit_ADS1115 adsModule, float multiplier){
   //Receives an adsModule object and the multiplier and 
   //  returns a value to set the zero on the lectures
