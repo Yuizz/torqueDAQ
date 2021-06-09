@@ -10,8 +10,12 @@
     ** MISO - pin 12
     ** CLK - pin 13
     ** CS - pin 10 (for MKRZero SD: SDCARD_SS_PIN) 
+  
+  
+  ADS and the RTC module (mounted on the DataLogger Shield) use the I2C communication protocol
+    that allows multiple devices to be connected in the same 2 wires
 
-  ADS1115 pins configuration
+  I2C pins on the arduino UNO
     ** SCL A5
     ** SDA A4
     
@@ -30,9 +34,9 @@ RTC_PCF8523 rtc;
 const float TorqueRatedOutput = 1.3161; //The rated output in mV/V indicated by certificate of calibration or data sheet
 const float Multiplier = 0.0078125F; //The value for each bit in the results
 
-//Required settings (Getting from config file or calculated by the settings)
+//Required settings (Getting from client or calculated by the settings)
 int SaveInterval = 5; //The interval in seconds to save the logfile
-int SampleRate = 100; //Declare this in the config file at the root of the SDcard
+int SampleRate = 100; //This may change on the client of the control program
 
 unsigned long SaveIntervalUs = SaveInterval * 1000000UL; //SaveIntervalUs in microSeconds to save the logfile
 unsigned long SampleInterval = 1000000UL / SampleRate;   // The interval in microSeconds to take a sample
@@ -40,6 +44,7 @@ float RatedOutput = TorqueRatedOutput * 5;  //The total value for the lecture in
                                             //  applied to the sensor
 
 //Requiered variables
+volatile bool isLogging = false;
 float ratedZero = 0;
 char logfileName[24];
 
@@ -51,23 +56,31 @@ unsigned long lastSample = 0;
 //Pinouts
 const int ChipSelect = 10;
 const int BuzzerPin = 9;
+const int isLoggingPin = 7;
+const int stopLoggingPin = 2;
 
 //Function prototypes
 float getZero(Adafruit_ADS1115 adsModule, float multiplier);
 String getFileName();
-void readConfigFile();
 void calculations();
+void stopLogging();
+void printHeaders();
 
 /*-----------------------------------SETUP-----------------------------------*/
 void setup() {
   Serial.begin(115200);
   Serial.println(SaveIntervalUs);
   Serial.println(SampleInterval);
+
+  pinMode(isLoggingPin, OUTPUT);
+  pinMode(stopLoggingPin, INPUT);
+
+  attachInterrupt(digitalPinToInterrupt(stopLoggingPin), stopLogging, RISING);
+
   ads.setGain(GAIN_SIXTEEN); //Set the gain to the 16x / 1bit = 0.0078125mV
   ads.begin();
 
   #ifdef SDcard
-  
     while(!SD.begin(ChipSelect) || !rtc.begin()){
       //Alarm indicating that the SD or rtc is not present or the wiring is incorrect
       tone(BuzzerPin, 10000, 50);
@@ -75,106 +88,82 @@ void setup() {
       tone(BuzzerPin, 10000, 100);
       delay(200);
     }
-
-    readConfigFile();
-    calculations();
-
-    String fileName = getFileName(); //Gets the timeStamp name for the file
-    fileName.toCharArray(logfileName, 24);
-    //Create the file and print in it the headers
-    logfile.open(logfileName, O_RDWR | O_CREAT);
-
-    logfile.print("SPS,");
-    logfile.println(SampleRate);
-
-    logfile.print("microSeconds");
-    logfile.print(",");
-    logfile.print("mV");
-    logfile.print(",");
-    logfile.println("NM");
-    logfile.close();
-#endif
+  ratedZero = getZero(ads, Multiplier);
+  #endif
 
   //To set the Zero of the torque sensor
-  ratedZero = getZero(ads, Multiplier);
   microsAdded = micros();
   lastSave = microsAdded;
   lastSample = microsAdded;
   //TODO make and alarm with buzzer or something indicating that the system is ready SDCARD
-  logfile.open(logfileName, FILE_WRITE);
 }
 /*-----------------------------------LOOP-----------------------------------*/
 void loop() {
-  int16_t result;
-    //Read the results from the Adafruit differential from 0 and 1 inputs
-  result = ads.readADC_Differential_0_1();
+  if(Serial.available() > 0){
+    String message = Serial.readString();
 
-  float mV = result * Multiplier - ratedZero;
+    if(message.startsWith("init")){
+      int receivedSampleRate = message.substring(message.lastIndexOf("=") + 1).toInt();
+      if(receivedSampleRate >= 10 && receivedSampleRate <= 260){
+        //Here would be the code if the data received is validated
 
-  logfile.print((micros() - microsAdded) / 1000);
-  logfile.print(",");
-  logfile.print(mV, 4); //Printing the mV to the corresponding column
-  logfile.print(",");
-  logfile.println(map(mV, -RatedOutput, RatedOutput, -3, 3), 4); //Printing the torque value to the corresponding column
+        isLogging = true;
+        #ifdef SDcard
+          String fileName = getFileName();
+          fileName.toCharArray(logfileName, 24);
+          printHeaders();
+          logfile.open(logfileName, FILE_WRITE);
+        #endif
 
-  // int passedTime = millis() - lastSample;
-  int passedTime = SampleInterval + lastSample - micros();
-  if(passedTime > 0)
-    delayMicroseconds(passedTime);
-  lastSample = micros();
+        SampleRate = receivedSampleRate;
+        calculations();
 
-  if (micros() - lastSave >= SaveIntervalUs){
-    logfile.close(); //Close the file every <SaveIntervalUs> (to save the data)
-    //This takes around 30ms every close and opens the file so, we will lose that range of time in samples every <SaveIntervalUs> 
-    logfile.open(logfileName, FILE_WRITE);
-    lastSave = micros();
+        digitalWrite(isLoggingPin, HIGH);
+      }
+    }
   }
+
+  #ifdef SDcard
+    while(isLogging){
+      int16_t result;
+      //Read the results from the Adafruit differential from 0 and 1 inputs
+      result = ads.readADC_Differential_0_1();
+
+      float mV = result * Multiplier - ratedZero;
+
+      logfile.print((micros() - microsAdded) / 1000);
+      logfile.print(",");
+      logfile.print(mV, 4); //Printing the mV to the corresponding column
+      logfile.print(",");
+      logfile.println(map(mV, -RatedOutput, RatedOutput, -3, 3), 4); //Printing the torque value to the corresponding column
+
+      // int passedTime = millis() - lastSample;
+      int passedTime = SampleInterval + lastSample - micros();
+      if(passedTime > 0)
+        delayMicroseconds(passedTime);
+      lastSample = micros();
+
+      if (micros() - lastSave >= SaveIntervalUs){
+        logfile.close(); //Close the file every <SaveIntervalUs> (to save the data)
+        //This takes around 30ms every close and opens the file so, we will lose that range of time in samples every <SaveIntervalUs> 
+        logfile.open(logfileName, FILE_WRITE);
+        lastSave = micros();
+      }
+    }
+
+  //Close the file in case it stills open
+    if(logfile.isOpen()){
+      logfile.close();
+    }
+  #endif
+  delay(15);
 }
 
 
 /*-------------------------------FUNCTIONS-------------------------------*/
-void readConfigFile(){
-  SdFile configFile;
-  configFile.open("config.txt", FILE_READ);
-  char line[40];
-  String lineString;
-
-  if(configFile){
-    while(configFile.available()){
-      configFile.fgets(line, sizeof(line));
-      String stringLine = line;
-      String key = stringLine.substring(0, stringLine.indexOf("="));
-      key.toLowerCase();
-      String stringValue = stringLine.substring(stringLine.indexOf("=") + 1);
-
-      if(key == "samplerate"){ //KEY
-        int value = stringValue.toInt();
-        if(value<=0 || value>260){
-          Serial.print("Error, value of sample rate out of range: sample rate setted to 100");
-          SampleRate = 100;
-          continue;
-        }
-        Serial.print("Setting the SampleRate to: ");
-        Serial.println(value);
-        SampleRate = value;
-      }
-      if(key=="saveinterval"){ //KEY
-        int value = stringValue.toInt();
-        if(value <= 0){
-          Serial.print("The Save Interval can not be less or equal to zero");
-          SaveInterval = 1;
-          continue;
-        }
-        Serial.print("Setting the Save Interval to: ");
-        Serial.println(value);
-        SaveInterval = value;
-      }
-
-    }
-  }else{
-    Serial.print("Error opening config file or is not in SDCard");
-  }
-  
+void stopLogging(){
+  isLogging = false;
+  digitalWrite(isLoggingPin, LOW);
 }
 
 void calculations(){
@@ -213,4 +202,18 @@ String getFileName(){
   Serial.println(fileName);
 
   return fileName;
+}
+void printHeaders(){
+    //Create the file and print in it the headers
+    logfile.open(logfileName, O_RDWR | O_CREAT);
+
+    logfile.print("SPS,");
+    logfile.println(SampleRate);
+
+    logfile.print("microSeconds");
+    logfile.print(",");
+    logfile.print("mV");
+    logfile.print(",");
+    logfile.println("NM");
+    logfile.close();
 }
