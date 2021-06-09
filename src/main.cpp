@@ -108,6 +108,10 @@ void loop() {
         //Here would be the code if the data received is validated
 
         isLogging = true;
+
+        SampleRate = receivedSampleRate;
+        calculations();
+
         #ifdef SDcard
           String fileName = getFileName();
           fileName.toCharArray(logfileName, 24);
@@ -115,8 +119,9 @@ void loop() {
           logfile.open(logfileName, FILE_WRITE);
         #endif
 
-        SampleRate = receivedSampleRate;
-        calculations();
+        microsAdded = micros();
+        lastSave = microsAdded;
+        lastSample = microsAdded;
 
         digitalWrite(isLoggingPin, HIGH);
       }
@@ -156,7 +161,7 @@ void loop() {
       logfile.close();
     }
   #endif
-  delay(15);
+  delay(5);
 }
 
 
